@@ -49,21 +49,27 @@ module Citrus
     end
 
     rule :grammar do
-      mod all(:grammar_keyword, :module_name, zero_or_more(any(:include, :root, :rule)), :end_keyword) do
+      mod all(:grammar_keyword, :module_name, zero_or_more(any(:include, :root, :rule, :abstract)), :end_keyword) do
         include ModuleNameHelpers
 
         def value
+          
           grammar = module_namespace.const_set(module_basename, Grammar.new)
-
-          captures[:include].each {|inc| grammar.include(inc.value) }
-          captures[:rule].each {|r| grammar.rule(r.rule_name.value, r.value) }
-
+          captures[:include].each {|inc| grammar.include(inc.value)}
+          captures[:rule].each {|r| grammar.rule(r.rule_name.value, r.value)}
+          captures[:abstract].each {|ar| grammar.abstract_rule(r.rule_name.value)}
+          grammar.resolve_abstract_rules
           grammar.root(root.value) if root
-
+          
           grammar
         end
       end
     end
+
+    rule :abstract do
+      all(:abstract_keyword, :rule_name,:end_keyword)
+    end
+
 
     rule :rule do
       all(:rule_keyword, :rule_name, zero_or_one(:expression), :end_keyword) {
@@ -316,12 +322,14 @@ module Citrus
       }
     end
 
-    rule :require_keyword,  [ 'require', :space ]
-    rule :include_keyword,  [ 'include', :space ]
-    rule :grammar_keyword,  [ 'grammar', :space ]
-    rule :root_keyword,     [ 'root', :space ]
-    rule :rule_keyword,     [ 'rule', :space ]
-    rule :end_keyword,      [ 'end', :space ]
+    rule :require_keyword,  [ /\brequire\b/, :space ]
+    rule :include_keyword,  [ /\binclude\b/, :space ]
+    rule :grammar_keyword,  [ /\bgrammar\b/, :space ]
+    rule :root_keyword,     [ /\broot\b/, :space ]
+    rule :rule_keyword,     [ /\brule\b/, :space ]
+    rule :abstract_keyword, [ /\babstract_rule\b/, :space ]
+
+    rule :end_keyword,      [ /\bend\b/, :space ]
     rule :lparen,           [ '(', :space ]
     rule :rparen,           [ ')', :space ]
     rule :lcurly,           [ '{', :space ]

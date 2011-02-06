@@ -393,6 +393,17 @@ module Citrus
     def rules
       @rules ||= {}
     end
+    
+    def abstract_rules
+      @abstract_rules ||= []
+    end
+    
+    def resolve_abstract_rules
+      included_grammars.map {|g|g.abstract_rules}.flatten.each do |ar|
+        ar.rule=rules[ar.rule_name]
+      end
+    end
+    
 
     # Returns +true+ if this grammar has a rule with the given +name+.
     def has_rule?(name)
@@ -448,6 +459,18 @@ module Citrus
     rescue => e
       e.message.replace("Cannot create rule \"#{name}\": #{e.message}")
       raise e
+    end
+
+    
+    # Creates a new abstract rule with the given +name+.
+    def abstract_rule(name)
+      sym = name.to_sym
+      rule_names << sym unless has_rule?(sym)
+      rule = Abstract.new(name)
+      self.abstract_rules << rule
+      rule.grammar = self
+      rules[sym] = rule
+      rule
     end
 
     # Gets/sets the +name+ of the root rule of this grammar. If no root rule is
@@ -811,6 +834,28 @@ module Citrus
 
       rule
     end
+  end
+
+  # An Abstract is a Proxy for a rule of the same name that will need to
+  # defined later in the grammars inheritnace chain. It is used instead of
+  # normal rule definitions when another rule in the grammar should call a
+  # rule in an inheriting grammar
+  #
+  #     abstract_rule <name>
+  #     end
+  #
+  class Abstract
+    include Proxy
+    
+    def rule=(rule)
+      @rule = rule
+    end
+
+    # Returns the Citrus notation of this rule as a string.
+    def to_citrus # :nodoc:
+      rule_name.to_s
+    end
+
   end
 
   # A Terminal is a Rule that matches directly on the input stream and may not
