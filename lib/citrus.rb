@@ -553,7 +553,7 @@ module Citrus
       rule
     end
     
-    def sem_pre(rule, before = false, &block)
+    def semp(rule, before=false, &block)
       rule = SemanticPredicate.new(rule,before)
       rule.predicate = block
       rule

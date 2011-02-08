@@ -22,7 +22,7 @@ class SemanticPredicateTest < Test::Unit::TestCase
       end
       
       rule :assign do
-       sem_pre(all(:var,'=',:symbol){[:assign, var.matches[0].value, symbol.value]},false) do |o,m|
+       semp(all(:var,'=',:symbol){[:assign, var.matches[0].value, symbol.value]},false) do |o,m|
          o[m.var.to_s]=m.symbol.to_s
          true
        end
@@ -34,14 +34,16 @@ class SemanticPredicateTest < Test::Unit::TestCase
       end
       
       rule :method do
-        sem_pre(all(:var){ [:method, var.to_s]}, false){|c, m|
+        semp all(:var){ [:method, var.to_s]}, false do |c, m|
           return false if c.has_key? m.var.to_s
           true
-        }
+        end
       end
       
       rule :var do
-      sem_pre any(/\b[a-z]+\b/){[:var, to_s]} , false do true end
+      semp any(/\b[a-z]+\b/){[:var, to_s]} , false do
+        true
+      end
         
       end
       root :unit
@@ -71,13 +73,13 @@ class SemanticPredicateTest < Test::Unit::TestCase
         }
       end
       rule :first do
-       sem_pre(:var, false) do |c,m|
+       semp(:var, false) do |c,m|
          c.first = m.to_s
        end
       end
 
       rule :second do
-       sem_pre(:var, true) do |c,r|
+       semp(:var, true) do |c,r|
          'fail' != c.first
        end
       end
