@@ -1163,7 +1163,7 @@ module Citrus
     end
 
     def to_citrus
-      "@#{@before ? ">": "<"} #{rule.to_embedded_s}"
+      "@#{@before ? "^": "$"} #{rule.to_embedded_s}"
     end
   end
   
