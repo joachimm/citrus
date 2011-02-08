@@ -1443,7 +1443,7 @@ module Citrus
     end
 
     def inspect
-      @string.inspect
+      "#<#{self.class.name} rule=\"#{@events.first}\" #{captures.map{|k,v| "#{k}:\"#{v}\"" }.join(" ")}>"
     end
 
     # Prints the entire subtree of this match using the given +indent+ to
