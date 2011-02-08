@@ -19,8 +19,6 @@ module Citrus
 
   CLOSE = -1
 
-  @cache = {}
-
   # Returns a map of paths of files that have been loaded via #load to the
   # result of #eval on the code in that file.
   #
@@ -29,7 +27,7 @@ module Citrus
   # #require the same file with a different relative path, it will be loaded
   # twice.
   def self.cache
-    @cache
+    @cache ||= {}
   end
 
   # Evaluates the given Citrus parsing expression grammar +code+ and returns an
@@ -74,19 +72,19 @@ module Citrus
     file += '.citrus' unless /\.citrus$/ === file
     force = options.delete(:force)
 
-    if force || !@cache[file]
+    if force || !cache[file]
       raise LoadError, "Cannot find file #{file}" unless ::File.file?(file)
       raise LoadError, "Cannot read file #{file}" unless ::File.readable?(file)
 
       begin
-        @cache[file] = eval(::File.read(file), options)
+        cache[file] = eval(::File.read(file), options)
       rescue SyntaxError => e
         e.message.replace("#{::File.expand_path(file)}: #{e.message}")
         raise e
       end
     end
 
-    @cache[file]
+    cache[file]
   end
 
   # Searches the <tt>$LOAD_PATH</tt> for a +file+ with the .citrus suffix and
@@ -706,6 +704,11 @@ module Citrus
       end
     end
 
+    # This alias allows strings to be compared to the string representation of
+    # Rule objects. It is most useful in assertions in unit tests, e.g.:
+    #
+    #     assert_equal('"a" | "b"', rule)
+    #
     alias_method :to_str, :to_s
 
     # Returns the Citrus notation of this rule as a string that is suitable to
@@ -1403,6 +1406,11 @@ module Citrus
       @string
     end
 
+    # This alias allows strings to be compared to the string value of Match
+    # objects. It is most useful in assertions in unit tests, e.g.:
+    #
+    #     assert_equal("a string", match)
+    #
     alias_method :to_str, :to_s
 
     # The default value for a match is its string value. This method is
@@ -1415,8 +1423,6 @@ module Citrus
       [self] + matches
     end
 
-    alias_method :to_ary, :to_a
-
     # Returns the capture at the given +key+. If it is an Integer (and an
     # optional length) or a Range, the result of #to_a with the same arguments
     # is returned. Otherwise, the value at +key+ in #captures is returned.
@@ -1428,8 +1434,6 @@ module Citrus
         captures[key]
       end
     end
-
-    alias_method :fetch, :[]
 
     def ==(other)
       case other
