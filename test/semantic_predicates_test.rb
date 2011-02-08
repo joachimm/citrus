@@ -22,7 +22,7 @@ class SemanticPredicateTest < Test::Unit::TestCase
       end
       
       rule :assign do
-       sem_pre(all(:var,'=',:symbol){[:assign, var.value, symbol.value]},false) do |o,m|
+       sem_pre(all(:var,'=',:symbol){[:assign, var.matches[0].value, symbol.value]},false) do |o,m|
          o[m.var.to_s]=m.symbol.to_s
          true
        end
@@ -34,28 +34,31 @@ class SemanticPredicateTest < Test::Unit::TestCase
       end
       
       rule :method do
-        sem_pre(ext(:var){ [:method, var.to_s]}, false){ |c, m|
+        sem_pre(all(:var){ [:method, var.to_s]}, false){|c, m|
           return false if c.has_key? m.var.to_s
+          true
         }
       end
       
       rule :var do
-        all(/[a-z]+/){
-          [:var, to_s]
-        }
+      sem_pre any(/\b[a-z]+\b/){[:var, to_s]} , false do true end
+        
       end
       root :unit
     end
 
-    c = {}
-    match = grammar.parse('aa=b;c=d;a;b;c;', {:context => c})
+    c = {'k'=>:true}
+    match = grammar.parse('k;aa=b;ac=d;ua;ub;ac;', {:context => c})
     assert(match)
-    assert_equal(match, 'aa=b;c=d;a;b;c;')
-
-    match = grammar.parse('a=b;c=d;', {:context => {}})
-    assert(match)
-    assert_equal('a=b;c=d;', match)
-
+    assert_equal(match, 'k;aa=b;ac=d;ua;ub;ac;')
+    assert_equal(
+      [[:expr, [:var, "k"]],
+      [:expr, [:assign, [:var,"aa"], [:method, "b"]]],
+      [:expr, [:assign, [:var,"ac"], [:method, "d"]]],
+      [:expr, [:method, "ua"]],
+      [:expr, [:method, "ub"]],
+      [:expr, [:var, "ac"]]],
+     match.value )
     
   end
   
