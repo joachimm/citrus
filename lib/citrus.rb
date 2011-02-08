@@ -182,6 +182,8 @@ module Citrus
 
     # The maximum offset in the input that was successfully parsed.
     attr_reader :max_offset
+    
+    attr_accessor :context
 
     def reset # :nodoc:
       @max_offset = 0
@@ -552,6 +554,13 @@ module Citrus
       rule.label = label
       rule
     end
+    
+    def sem_pre(rule, before = false, &block)
+      rule = SemanticPredicate.new(rule,before)
+      rule.predicate = block
+      rule
+    end
+    
 
     # Specifies a Module that will be used to extend all matches created with
     # the given +rule+. A block may also be given that will be used to create
@@ -649,7 +658,9 @@ module Citrus
 
       input = (opts[:memoize] ? MemoizedInput : Input).new(string)
       input.pos = opts[:offset] if opts[:offset] > 0
-
+      
+      input.context=options[:context]
+      
       events = input.exec(self)
       length = events[-1]
 
@@ -1097,7 +1108,65 @@ module Citrus
       '~' + rule.to_embedded_s
     end
   end
+  
+  class SemanticPredicate
+    include Nonterminal
+    # +before+ determines if the rule is run before or after subrules
+    def initialize(rule='', before=false)
+      super([rule])
+      @before = before
+    end
 
+    def rule
+      rules[0]
+    end
+
+    def predicate=(pred)
+      if Proc === pred
+        pred = Module.new { define_method(:predicate, &pred) }
+      end
+
+      self.extend(pred)
+    end
+
+    def exec(input, events=[])
+      events << self
+      res = true
+      res = predicate(input.context, rule) if @before == true
+      unless res
+        events.pop
+        return events
+      end
+      
+      index = events.size
+      input.exec(rule, events)
+      
+      if index < events.size
+        stop = events[-1]
+        if @before == false
+          start = input.pos - stop
+          match = Match.new(input.string.slice(start, stop), events.slice(index..-1))
+          res = predicate(input.context, match)
+          unless res
+            events.slice!(index-1 .. events.length)
+            return events
+          end
+        end
+        
+        events << CLOSE
+        events << stop
+      else
+        events.pop
+      end
+
+      events
+    end
+
+    def to_citrus
+      "@#{@before ? ">": "<"} #{rule.to_embedded_s}"
+    end
+  end
+  
   # A Repeat is a Nonterminal that specifies a minimum and maximum number of
   # times its rule must match. The Citrus notation is an integer, +N+, followed
   # by an asterisk, followed by another integer, +M+, all of which follow any

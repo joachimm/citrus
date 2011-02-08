@@ -86,9 +86,32 @@ module Citrus
     end
 
     rule :sequence do
-      one_or_more(:labelled) {
-        rules = captures[:labelled].map {|l| l.value }
+      one_or_more(:decorated) {
+        rules = captures[:decorated].map {|d| d.value }
         rules.length > 1 ? Sequence.new(rules) : rules.first
+      }
+    end
+
+    rule :decorated do
+      all(zero_or_one(:at_block), :labelled) {
+        rule = labelled.value
+        if at_block
+          rule = SemanticPredicate.new(rule, at_block.dir.value)
+          rule.predicate = at_block.value
+        end  
+        rule
+      }
+    end
+    
+    rule :at_block do
+      all('@', :dir, :block) do
+        block.value
+      end
+    end
+    
+    rule :dir do
+      any('^','$'){
+        to_s == '^'
       }
     end
 
