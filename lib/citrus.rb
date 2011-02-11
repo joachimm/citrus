@@ -1327,6 +1327,10 @@ module Citrus
       true
     end
 
+    def rule_name
+      to_citrus
+    end
+
     # Returns the Citrus notation of this rule as a string.
     def to_citrus # :nodoc:
       rules.map {|r| r.to_embedded_s }.join(' | ')
