@@ -26,7 +26,7 @@ class MemoizedInputTest < Test::Unit::TestCase
   def test_cache_hits1
     input = MemoizedInput.new('a')
     input.exec(LetterA.rule(:top))
-    assert_equal(2, input.cache_hits)
+    assert_equal(3, input.cache_hits)
   end
 
   def test_cache_hits2
@@ -58,13 +58,10 @@ class MemoizedInputTest < Test::Unit::TestCase
       "c"
     end
   end
-  
+
   def test_memoization
-    match = LettersABC.parse('bca')
-    assert_equal('bca',match)
-    
     match = LettersABC.parse('bca',{:memoize=>true})
-    assert_equal('bca',match)    
-  end
-  
+    assert_equal('bca',match)
+  end 
+
 end
