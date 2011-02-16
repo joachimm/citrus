@@ -243,11 +243,11 @@ module Citrus
     # Returns an array of events for the given +rule+ at the current pointer
     # position. Objects in this array may be one of three types: a Rule,
     # Citrus::CLOSE, or a length (integer).
-    def exec(rule, events=[])
+    def exec(rule, events=[], memoize=true)
       position = pos
       index = events.size
 
-      if apply_rule(rule, position, events).size > index
+      if apply_rule(rule, position, events, memoize).size > index
         @max_offset = pos if pos > @max_offset
       else
         self.pos = position
@@ -260,7 +260,7 @@ module Citrus
     # position, +nil+ if none can be made.
     def test(rule)
       position = pos
-      events = apply_rule(rule, position, [])
+      events = apply_rule(rule, position, [], memoized?)
       self.pos = position
       events[-1]
     end
@@ -268,8 +268,8 @@ module Citrus
   private
 
     # Appends all events for +rule+ at the given +position+ to +events+.
-    def apply_rule(rule, position, events)
-      rule.exec(self, events)
+    def apply_rule(rule, position, events, memoize)
+      rule.exec(self, events, memoize)
     end
   end
 
@@ -285,7 +285,14 @@ module Citrus
       @cache = {}
       @cache_hits = 0
     end
+    
+    class LR
+      attr_accessor :detected
 
+      def initialize(detected)
+        @detected = detected
+      end
+    end
     # A nested hash of rules to offsets and their respective matches.
     attr_reader :cache
 
@@ -305,26 +312,60 @@ module Citrus
 
   private
 
-    def apply_rule(rule, position, events) # :nodoc:
-      memo = @cache[rule] ||= {}
-
-      if memo[position]
+    def apply_rule(rule, position, events, memoize) # :nodoc:
+      memo = @cache[rule] ||={}
+      mem = memo[position]
+      if mem && mem!=[]
         @cache_hits += 1
-        mem = memo[position]
+        # if identical parent rule has already been here
+        # flag it
+        if mem.kind_of?(LR)
+          mem.detected = true; 
+          return events
+        end
         unless mem.empty?
           events.concat(mem)
           self.pos += events[-1]
         end
       else
         index = events.size
-        rule.exec(self, events)
+        
+        lr = LR.new(false)
+        # Memoize lr, then evaluate R
+        memo[position] = lr
+        rule.exec(self, events, memoize)
 
         # Memoize the result so we can use it next time this same rule is
         # executed at this position.
-        memo[position] = events.slice(index, events.size)
+        if memoize
+          memo[position] = events.slice(index, events.size)
+        else
+          memo[position] = []
+        end
+        # if this rule has been seen before, (same rule was accessed as child)
+        # start growing the seed 
+        if lr.detected && index < events.size
+          ans = grow_lr(rule, position, lr, nil)
+          events.slice!(index, events.size)
+          events.concat(ans)
+        end
       end
-
       events
+    end
+
+    def grow_lr(rule, position, mem, head)
+      progress = position
+      while true
+        self.pos = position
+        events = []
+        rule.exec(self,events, false)
+        break if events.size==0 || pos <= progress
+        @cache[rule][position] = events
+        progress = pos
+      end
+      # set the last successful parse value
+      self.pos = progress
+      @cache[rule][position] || []
     end
   end
 
@@ -768,10 +809,10 @@ module Citrus
     end
 
     # Returns an array of events for this rule on the given +input+.
-    def exec(input, events=[])
+    def exec(input, events=[], memoize=true)
       index = events.size
 
-      if input.exec(rule, events).size > index
+      if input.exec(rule, events, memoize).size > index
         # Proxy objects insert themselves into the event stream in place of the
         # rule they are proxy for.
         events[index] = self
@@ -902,9 +943,8 @@ module Citrus
     attr_reader :regexp
 
     # Returns an array of events for this rule on the given +input+.
-    def exec(input, events=[])
+    def exec(input, events=[], memoize=true)
       match = input.scan(@regexp)
-
       if match
         events << self
         events << CLOSE
@@ -1020,7 +1060,7 @@ module Citrus
     end
 
     # Returns an array of events for this rule on the given +input+.
-    def exec(input, events=[])
+    def exec(input, events=[], memoize=true)
       if input.test(rule)
         events << self
         events << CLOSE
@@ -1055,7 +1095,7 @@ module Citrus
     end
 
     # Returns an array of events for this rule on the given +input+.
-    def exec(input, events=[])
+    def exec(input, events=[], memoize=true)
       unless input.test(rule)
         events << self
         events << CLOSE
@@ -1092,7 +1132,7 @@ module Citrus
     end
 
     # Returns an array of events for this rule on the given +input+.
-    def exec(input, events=[])
+    def exec(input, events=[], memoize=true)
       length = 0
 
       until input.test(rule)
@@ -1136,7 +1176,7 @@ module Citrus
       self.extend(pred)
     end
 
-    def exec(input, events=[])
+    def exec(input, events=[], memoize=true)
       events << self
       res = true
       res = predicate(input.context, rule) if @before == true
@@ -1144,10 +1184,10 @@ module Citrus
         events.pop
         return events
       end
-      
+
       index = events.size
-      input.exec(rule, events)
-      
+      input.exec(rule, events, memoize)
+
       if index < events.size
         stop = events[-1]
         if @before == false
@@ -1159,7 +1199,7 @@ module Citrus
             return events
           end
         end
-        
+
         events << CLOSE
         events << stop
       else
@@ -1209,14 +1249,14 @@ module Citrus
     end
 
     # Returns an array of events for this rule on the given +input+.
-    def exec(input, events=[])
+    def exec(input, events=[], memoize=true)
       events << self
 
       index = events.size
       start = index - 1
       length = n = 0
 
-      while n < max && input.exec(rule, events).size > index
+      while n < max && input.exec(rule, events, memoize).size > index
         length += events[-1]
         index = events.size
         n += 1
@@ -1265,7 +1305,7 @@ module Citrus
     include Nonterminal
 
     # Returns an array of events for this rule on the given +input+.
-    def exec(input, events=[])
+    def exec(input, events=[], memoize=true)
       events << self
 
       index = events.size
@@ -1273,7 +1313,7 @@ module Citrus
       length = n = 0
       m = rules.length
 
-      while n < m && input.exec(rules[n], events).size > index
+      while n < m && input.exec(rules[n], events, memoize).size > index
         length += events[-1]
         index = events.size
         n += 1
@@ -1304,14 +1344,14 @@ module Citrus
     include Nonterminal
 
     # Returns an array of events for this rule on the given +input+.
-    def exec(input, events=[])
+    def exec(input, events=[], memoize=true)
       events << self
 
       index = events.size
       n = 0
       m = rules.length
 
-      while n < m && input.exec(rules[n], events).size == index
+      while n < m && input.exec(rules[n], events, memoize).size == index
         n += 1
       end
 
