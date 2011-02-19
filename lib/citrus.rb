@@ -3,6 +3,7 @@
 require 'strscan'
 require 'pathname'
 require 'citrus/version'
+require 'set'
 
 # Citrus is a compact and powerful parsing library for Ruby that combines the
 # elegance and expressiveness of the language with the simplicity and power of
@@ -284,15 +285,33 @@ module Citrus
       super(string)
       @cache = {}
       @cache_hits = 0
+      @heads = {}
+      @lrstack = nil
     end
     
     class LR
-      attr_accessor :detected
-
-      def initialize(detected)
-        @detected = detected
+      attr_accessor :seed, :rule, :head, :next
+      def initialize(seed, rule, head, n)
+        @seed = seed
+        @rule = rule
+        @head = head
+        @next = n
       end
     end
+
+    class Head
+      attr_accessor :rule, :involved_set, :eval_set
+      def initialize(rule)
+        @rule = rule
+        @involved_set = Set.new
+        @eval_set = Set.new
+      end
+      
+      def inspect
+        "<#Head rule=#{@rule} involved=[#{involved_set.to_a.join(", ")}] eval=[#{eval_set.to_a.join(", ")}]"
+      end
+    end
+  
     # A nested hash of rules to offsets and their respective matches.
     attr_reader :cache
 
@@ -313,15 +332,15 @@ module Citrus
   private
 
     def apply_rule(rule, position, events, memoize) # :nodoc:
-      memo = @cache[rule] ||={}
-      mem = memo[position]
-      if mem && mem!=[]
+      mem = recall(rule, position, memoize)
+      memo = @cache[rule]
+      if mem
         @cache_hits += 1
         # if identical parent rule has already been here
         # flag it
         if mem.kind_of?(LR)
-          mem.detected = true; 
-          return events
+          setup_lr(rule,mem)
+          mem = mem.seed
         end
         unless mem.empty?
           events.concat(mem)
@@ -329,23 +348,24 @@ module Citrus
         end
       else
         index = events.size
-        
-        lr = LR.new(false)
+
+        lr = LR.new([], rule, nil, @lrstack)
+        @lrstack = lr        
         # Memoize lr, then evaluate R
         memo[position] = lr
-        rule.exec(self, events, memoize)
+        rule.exec(self, events)
+        # pop lr off the rule invocation stack
+        @lrstack = @lrstack.next
 
         # Memoize the result so we can use it next time this same rule is
         # executed at this position.
-        if memoize
-          memo[position] = events.slice(index, events.size)
-        else
-          memo[position] = []
-        end
+        memo[position] = events.slice(index, events.size) if memoize
+
         # if this rule has been seen before, (same rule was accessed as child)
         # start growing the seed 
-        if lr.detected && index < events.size
-          ans = grow_lr(rule, position, lr, nil)
+        if lr.head
+          lr.seed = events.slice(index, events.size)
+          ans = lr_answer(rule, position, lr)
           events.slice!(index, events.size)
           events.concat(ans)
         end
@@ -354,19 +374,72 @@ module Citrus
     end
 
     def grow_lr(rule, position, mem, head)
+      @heads[position]=head
       progress = position
       while true
+        head.eval_set = head.involved_set.dup
         self.pos = position
         events = []
+        # Don't memoize while growing the seed
         rule.exec(self,events, false)
         break if events.size==0 || pos <= progress
         @cache[rule][position] = events
         progress = pos
       end
       # set the last successful parse value
+      @heads[position]=nil
       self.pos = progress
-      @cache[rule][position] || []
+      @cache[rule][position]
     end
+    
+    
+    def setup_lr(rule, lr)
+      if lr.head == nil
+        lr.head = Head.new(rule)
+      end
+      s = @lrstack
+      while s.head != lr.head
+        s.head = lr.head
+        lr.head.involved_set << s.rule
+        s = s.next
+      end
+    end
+    
+    def lr_answer(rule, position, mem)
+      head = mem.head
+      if head.rule != rule
+        return mem.seed
+      else
+        @cache[rule][position] = mem.seed
+        if mem.seed == []
+          return []
+        else
+          return grow_lr(rule,position,mem, head)
+        end
+      end
+    end
+
+    
+    def recall(rule, position, memoize)
+      memo = @cache[rule] ||= {}
+      head = @heads[position]
+      unless head
+        return memo[position]
+      end
+      
+      if memo[position] == nil && rule != head.rule && !head.involved_set.include?(rule)
+        return []
+      end
+      if head.eval_set.include? rule
+        head.eval_set.delete(rule)
+        events = []
+        rule.exec(self, events)
+        self.pos = position
+        return events
+      end
+      memo[position]
+    end
+    
   end
 
   # Inclusion of this module into another extends the receiver with the grammar
